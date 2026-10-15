@@ -6,6 +6,7 @@ metadata:
   name: {{ .Chart.Name }}-blue-dashboard
   labels:
     app.kubernetes.io/name: {{ .Chart.Name }}-blue-dashboard
+    dash0.com/enable: "true"
 spec:
   replicas: {{ .Values.dashboard.replicas }}
   # RollingUpdate: this pod mounts no ReadWriteOnce PVCs at all any more, so two
@@ -33,6 +34,7 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: {{ .Chart.Name }}-blue-dashboard
+        dash0.com/enable: "true"
     spec:
       containers:
         - name: dashboard

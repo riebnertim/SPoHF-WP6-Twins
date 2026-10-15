@@ -7,6 +7,7 @@ metadata:
   name: {{ .Chart.Name }}-grey-dashboard
   labels:
     app.kubernetes.io/name: {{ .Chart.Name }}-grey-dashboard
+    dash0.com/enable: "true"
 spec:
   replicas: {{ .Values.grey.replicas }}
   selector:
@@ -16,6 +17,7 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: {{ .Chart.Name }}-grey-dashboard
+        dash0.com/enable: "true"
     spec:
       containers:
         - name: dashboard
