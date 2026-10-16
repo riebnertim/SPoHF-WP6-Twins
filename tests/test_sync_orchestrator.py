@@ -1,12 +1,14 @@
 """Tests for wp6_data.sync.orchestrator — patch SyncStateManager + upsert_readings + mock client."""
 
 from collections import defaultdict
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
 
+from wp6_data.sync.feeds import YOOKR
 from wp6_data.sync.orchestrator import (
     CONSECUTIVE_DUPE_WINDOW_THRESHOLD,
     INCREMENTAL_LOOKBACK_DAYS,
@@ -104,11 +106,9 @@ class TestUpdateSensorStats:
 
 
 class TestReadingToParams:
-    def test_converts_reading(self, mock_settings):
-        orch = SyncOrchestrator.__new__(SyncOrchestrator)
-        orch.settings = mock_settings
+    def test_converts_reading(self):
         reading = make_reading()
-        params = orch._reading_to_params(reading)
+        params = YOOKR.to_params(reading)
         assert params["device_name"] == "Test Device"
         assert params["sensor_tag"] == "temperature"
         assert params["value"] == "21.5"
@@ -155,7 +155,7 @@ class TestFlushBatch:
 
         # Coverage is derived from the cagg now — the sync only writes readings.
         assert (upserted, created) == (3, 2)
-        mock_upsert.assert_awaited_once_with(conn, batch)
+        mock_upsert.assert_awaited_once_with(conn, batch, source=None)
 
 
 # --- _sync_endpoint ---
@@ -166,8 +166,11 @@ def _make_orchestrator(mock_settings):
     orch = SyncOrchestrator.__new__(SyncOrchestrator)
     orch.settings = mock_settings
     orch.client = MagicMock()
-    orch._dsn = mock_settings.tsdb_url
     return orch
+
+
+# Blue's feed with schema bootstrap stubbed, for run() tests that never touch a DB.
+_BLUE_FEED = replace(YOOKR, ensure_schema=AsyncMock())
 
 
 def _mock_pool_ctx():
@@ -327,10 +330,7 @@ class TestRun:
                 new_callable=AsyncMock,
                 return_value=mock_pool,
             ) as mock_init,
-            patch(
-                "wp6_data.sync.orchestrator.ensure_schema_blue",
-                new_callable=AsyncMock,
-            ),
+            patch("wp6_data.sync.orchestrator.feed_for", return_value=_BLUE_FEED),
             patch(
                 "wp6_data.sync.orchestrator.refresh_sensor_summary",
                 new_callable=AsyncMock,
@@ -371,10 +371,7 @@ class TestRun:
                 new_callable=AsyncMock,
                 return_value=AsyncMock(),
             ),
-            patch(
-                "wp6_data.sync.orchestrator.ensure_schema_blue",
-                new_callable=AsyncMock,
-            ),
+            patch("wp6_data.sync.orchestrator.feed_for", return_value=_BLUE_FEED),
             patch(
                 "wp6_data.sync.orchestrator.refresh_sensor_summary",
                 new_callable=AsyncMock,
@@ -411,10 +408,7 @@ class TestRun:
                 new_callable=AsyncMock,
                 return_value=AsyncMock(),
             ),
-            patch(
-                "wp6_data.sync.orchestrator.ensure_schema_blue",
-                new_callable=AsyncMock,
-            ),
+            patch("wp6_data.sync.orchestrator.feed_for", return_value=_BLUE_FEED),
             patch(
                 "wp6_data.sync.orchestrator.refresh_sensor_summary",
                 new_callable=AsyncMock,

@@ -302,16 +302,20 @@ async def fetch_sync_metrics_tsdb() -> list[dict[str, Any]]:
     """Return red's enriched job-run audit rows from `sync_metadata`.
 
     Shape matches `blue.deps.fetch_sync_metrics` so `shared.routes.status`
-    renders them uniformly. Red has no continuously-synced datalake endpoint —
-    its rows (``sijia``, ``red-export``) are event/job-driven — so no freshness
-    budget is attached.
+    renders them uniformly. Most of red's rows (``sijia``, ``red-export``) are
+    event/job-driven and get no freshness budget; the LetsGrow sync is a
+    continuous feed, judged against its once-a-day delivery rather than
+    yookr's 15-minute one.
     """
     from wp6_data.db.pool import get_pool
     from wp6_data.db.queries import fetch_sync_metrics_rows
+    from wp6_data.red import letsgrow
     from wp6_data.red.manual_sources import MANUAL_SOURCE_VALUES
 
     rows = await fetch_sync_metrics_rows(get_pool())
     for r in rows:
         r["source_type"] = "manual" if r["endpoint"] in MANUAL_SOURCE_VALUES else "synced"
-        r["freshness_budget"] = None
+        r["freshness_budget"] = (
+            letsgrow.FRESHNESS_BUDGET_HOURS if r["endpoint"] == letsgrow.ENDPOINT else None
+        )
     return rows

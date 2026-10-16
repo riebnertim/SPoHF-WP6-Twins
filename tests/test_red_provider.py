@@ -1,7 +1,7 @@
 """Tests for the federated RedSensorProvider.
 
 The provider routes per-sensor between MySQL (legacy LoRaWAN tables) and
-the red TimescaleDB (manual measurements + future letsgrow sync) based on
+the red TimescaleDB (manual measurements + the letsgrow sync) based on
 the `source` field on each `sensor_defaults` entry in metadata.yaml.
 
 Tests use the real red metadata registry so routing reflects production.
@@ -498,7 +498,7 @@ async def test_fetch_daily_coverage_tags_manual_by_source(
     mock_mysql.pool = pool
 
     # TSDB leg: a manual (Sijia) row and a hypothetical automated row that
-    # also carries a source (e.g. future letsgrow) — only the former is manual.
+    # also carries a source (e.g. letsgrow) — only the former is manual.
     mock_tsdb_coverage.return_value = [
         {"device": "neurath-B-2034-strabelina", "sensor": "chlorophyll",
          "day": date(2025, 9, 1), "source": SIJIA.categorical_value},

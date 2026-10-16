@@ -4,7 +4,7 @@ The one list of red :class:`ManualSource` descriptors fed by the manual
 upload path (currently only Sijia). "Manual" data — for the status-page
 coverage split — is defined as readings whose ``source`` matches one of
 these, as distinct from automated feeds that also carry a metadata
-``source`` (the LoRaWAN tables via MySQL, and a future letsgrow sync).
+``source`` (the LoRaWAN tables via MySQL, and the letsgrow sync).
 
 Add a descriptor here when red gains another manual source.
 """

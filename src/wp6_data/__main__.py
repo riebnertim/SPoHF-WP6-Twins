@@ -1,7 +1,8 @@
 """Entry point for wp6-data sync job.
 
-Runs the SPoHF datalake sync — the single automated source for the blue twin
-since `yookr-direct` was retired.
+Runs the SPoHF datalake sync: `yookr-data` into blue (the single automated
+source for blue since `yookr-direct` was retired) and `letsgrow-data` into red.
+Which endpoints run is `WP6_ENDPOINTS`; each goes to its own twin's database.
 
 Usage:
     uv run python -m wp6_data

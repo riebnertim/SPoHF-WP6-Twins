@@ -6,6 +6,7 @@ explicitly enabled, and (2) a sync run produces a connected ``sync.run`` →
 production). Library auto-instrumentation itself is OpenTelemetry's to test.
 """
 
+from dataclasses import replace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -16,6 +17,7 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 
 from wp6_data.shared import telemetry
 from wp6_data.shared.observability import _add_trace_context
+from wp6_data.sync.feeds import YOOKR
 from wp6_data.sync.orchestrator import SyncOrchestrator
 
 # One global provider for the process (set_tracer_provider honours only the first
@@ -86,7 +88,10 @@ async def test_sync_emits_connected_span_tree(spans, mock_settings):
 
     with (
         patch("wp6_data.sync.orchestrator.init_pool", new_callable=AsyncMock),
-        patch("wp6_data.sync.orchestrator.ensure_schema_blue", new_callable=AsyncMock),
+        patch(
+            "wp6_data.sync.orchestrator.feed_for",
+            return_value=replace(YOOKR, ensure_schema=AsyncMock()),
+        ),
         patch("wp6_data.sync.orchestrator.refresh_sensor_summary_recent", new_callable=AsyncMock),
         patch("wp6_data.sync.orchestrator.close_pool", new_callable=AsyncMock),
         patch.object(orch, "_sync_endpoint", new_callable=AsyncMock, return_value=5),
@@ -135,7 +140,10 @@ async def test_endpoint_failure_recorded_on_span(spans, mock_settings):
 
     with (
         patch("wp6_data.sync.orchestrator.init_pool", new_callable=AsyncMock),
-        patch("wp6_data.sync.orchestrator.ensure_schema_blue", new_callable=AsyncMock),
+        patch(
+            "wp6_data.sync.orchestrator.feed_for",
+            return_value=replace(YOOKR, ensure_schema=AsyncMock()),
+        ),
         patch("wp6_data.sync.orchestrator.refresh_sensor_summary_recent", new_callable=AsyncMock),
         patch("wp6_data.sync.orchestrator.close_pool", new_callable=AsyncMock),
         patch.object(

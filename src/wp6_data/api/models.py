@@ -41,8 +41,39 @@ class SensorReading(BaseModel):
             return None
 
 
-class ApiResponse(BaseModel):
-    """Paginated API response wrapper."""
+class Page[RowT: BaseModel](BaseModel):
+    """One page of any relay endpoint. Every endpoint pages the same way; only
+    the row shape differs, which is what `RowT` carries through the client."""
 
-    results: list[SensorReading]
+    results: list[RowT]
     count: int = Field(description="Number of results in this page")
+
+
+class ApiResponse(Page[SensorReading]):
+    """Paginated API response wrapper (`yookr-data`)."""
+
+
+class LetsGrowReading(BaseModel):
+    """Single LetsGrow reading from the relay (`letsgrow-data`).
+
+    One row is one value of one LetsGrow *column* (`col_id`) inside one *module*
+    (a LetsGrow screen such as "Climate B4"). Its shape is unrelated to
+    yookr's: there is no device/tag pair, only the module and a free-text
+    `description` that carries the unit ("Temperature greenhouse - °C - 5 min").
+    `col_id` is the stable identity of the quantity; the description is a label.
+    """
+
+    module_id: int
+    module_name: str
+    col_id: int
+    description: str = ""
+    # Greenhouse wall-clock time, naive: LetsGrow exports local time, not UTC
+    # (outdoor radiation peaks at ~13:15 here in October). Localised on ingest.
+    timestamp: datetime
+    value: float | None = None
+    # Not modelled: `offset` (always 0) and `synced_at` (the relay's ingestion
+    # time — freshness is derived from the measurement time instead).
+
+
+class LetsGrowResponse(Page[LetsGrowReading]):
+    """Paginated `letsgrow-data` response wrapper."""

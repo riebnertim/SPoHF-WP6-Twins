@@ -194,6 +194,11 @@ climate_model:
         cycle, so an empty house during changeover is the likely cause — UNCONFIRMED,
         awaiting Neurath/WP1.
 
+# Sources a sync job ingests (rather than a person uploading a file). They
+# route to TimescaleDB like any sourced sensor but are shown as automated.
+automated_sources:
+  - "letsgrow"
+
 sensor_defaults:
   temp:
     type: "temperature"
@@ -355,6 +360,248 @@ sensor_defaults:
     alias: "Antioxidants (Dry)"
     source: "sijia"
 
+  # ── LetsGrow (Neurath's climate computer, relayed by SPoHF) ──
+  # Synced by `letsgrow-data` (red/letsgrow.py maps col_id -> tag). The `lg_`
+  # prefix keeps every tag clear of the legacy MySQL tags, because red routes
+  # to TimescaleDB by tag. `agg: max` marks LetsGrow's daily running totals,
+  # which climb through the day and reset at midnight.
+  lg_temp_greenhouse:
+    type: "temperature"
+    unit: "°C"
+    alias: "LG Temp greenhouse"
+    source: "letsgrow"
+  lg_rh_greenhouse:
+    type: "humidity"
+    unit: "%RH"
+    alias: "LG RH greenhouse"
+    source: "letsgrow"
+  lg_abs_hum_greenhouse:
+    type: "absolute humidity"
+    unit: "g/m³"
+    alias: "LG Abs hum greenhouse"
+    source: "letsgrow"
+  lg_hum_deficit_greenhouse:
+    type: "humidity deficit"
+    unit: "g/m³"
+    alias: "LG Hum deficit greenhouse"
+    source: "letsgrow"
+  lg_vpd:
+    type: "vapour pressure deficit"
+    unit: "kPa"
+    alias: "LG VPD"
+    source: "letsgrow"
+  lg_par:
+    type: "photosynthetically active radiation (PAR)"
+    unit: "μmol/m²/s"
+    alias: "LG PAR"
+    source: "letsgrow"
+  lg_par_sum:
+    type: "PAR sum (daily, cumulative)"
+    unit: "mol/m²"
+    alias: "LG PAR sum"
+    agg: max
+    source: "letsgrow"
+  lg_co2:
+    type: "CO₂"
+    unit: "ppm"
+    alias: "LG CO₂"
+    source: "letsgrow"
+  lg_co2_kg:
+    type: "CO₂ dosing"
+    unit: "kg"
+    alias: "LG CO₂ (kg)"
+    source: "letsgrow"
+  lg_heating_setpoint:
+    type: "setpoint"
+    unit: "°C"
+    alias: "LG Heating setpoint"
+    source: "letsgrow"
+  lg_pipe_lower:
+    type: "pipe temperature"
+    unit: "°C"
+    alias: "LG Lower circuit"
+    source: "letsgrow"
+  lg_pipe_lower_calc:
+    type: "pipe temperature (calc)"
+    unit: "°C"
+    alias: "LG Lower circuit calc"
+    source: "letsgrow"
+  lg_pipe_growth:
+    type: "pipe temperature"
+    unit: "°C"
+    alias: "LG Growth circuit"
+    source: "letsgrow"
+  lg_pipe_growth_calc:
+    type: "pipe temperature (calc)"
+    unit: "°C"
+    alias: "LG Growth circuit calc"
+    source: "letsgrow"
+  lg_vent_lee:
+    type: "vent position"
+    unit: "%"
+    alias: "LG Vent lee"
+    source: "letsgrow"
+  lg_vent_lee_calc:
+    type: "vent position (calc)"
+    unit: "%"
+    alias: "LG Vent lee calc"
+    source: "letsgrow"
+  lg_vent_wind:
+    type: "vent position"
+    unit: "%"
+    alias: "LG Vent wind"
+    source: "letsgrow"
+  lg_vent_wind_calc:
+    type: "vent position (calc)"
+    unit: "%"
+    alias: "LG Vent wind calc"
+    source: "letsgrow"
+  lg_vent_setpoint:
+    type: "setpoint"
+    unit: "°C"
+    alias: "LG Ventilation setpoint"
+    source: "letsgrow"
+  lg_vent_temp_lee_calc:
+    type: "ventilation temp (calc)"
+    unit: "°C"
+    alias: "LG Vent temp lee calc"
+    source: "letsgrow"
+  lg_vent_temp_wind_calc:
+    type: "ventilation temp (calc)"
+    unit: "°C"
+    alias: "LG Vent temp wind calc"
+    source: "letsgrow"
+  lg_energy_curtain:
+    type: "screen position"
+    unit: "%"
+    alias: "LG Energy curtain"
+    source: "letsgrow"
+  lg_blackout_curtain:
+    type: "screen position"
+    unit: "%"
+    alias: "LG Black-out curtain"
+    source: "letsgrow"
+  lg_fans:
+    type: "status (1=off, 2=on)"
+    unit: ""
+    alias: "LG Fans"
+    source: "letsgrow"
+  lg_assim_light_on:
+    type: "lighting status"
+    unit: ""
+    alias: "LG Assimilation light on"
+    source: "letsgrow"
+  lg_assim_light_pct:
+    type: "lighting level"
+    unit: "%"
+    alias: "LG Assimilation light"
+    source: "letsgrow"
+  lg_led1_on:
+    type: "lighting status"
+    unit: ""
+    alias: "LG LED 1 on"
+    source: "letsgrow"
+  lg_rad:
+    type: "solar radiation"
+    unit: "W/m²"
+    alias: "LG Radiation"
+    source: "letsgrow"
+  lg_rad_sum:
+    type: "radiation sum (daily, cumulative)"
+    unit: "J/cm²"
+    alias: "LG Radiation sum"
+    agg: max
+    source: "letsgrow"
+  lg_water_uptake:
+    type: "water uptake (daily, cumulative)"
+    unit: "l/m²"
+    alias: "LG Water uptake"
+    agg: max
+    source: "letsgrow"
+  lg_irrigation:
+    type: "irrigation (daily, cumulative)"
+    unit: "l/m²"
+    alias: "LG Irrigation"
+    agg: max
+    source: "letsgrow"
+  lg_irrigation_ec:
+    type: "EC"
+    unit: "mS/cm"
+    alias: "LG Irrigation EC"
+    source: "letsgrow"
+  lg_irrigation_ph:
+    type: "pH"
+    unit: "pH"
+    alias: "LG Irrigation pH"
+    source: "letsgrow"
+  lg_irrigation_starts:
+    type: "irrigation starts (daily, cumulative)"
+    unit: "count"
+    alias: "LG Irrigation starts"
+    agg: max
+    source: "letsgrow"
+  lg_drain:
+    type: "drain (daily, cumulative)"
+    unit: "l/m²"
+    alias: "LG Drain"
+    agg: max
+    source: "letsgrow"
+  lg_drain_pct:
+    type: "drain share"
+    unit: "%"
+    alias: "LG Drain %"
+    source: "letsgrow"
+  lg_drain_ec:
+    type: "EC"
+    unit: "mS/cm"
+    alias: "LG Drain EC"
+    source: "letsgrow"
+  lg_drain_ph:
+    type: "pH"
+    unit: "pH"
+    alias: "LG Drain pH"
+    source: "letsgrow"
+  lg_substrate_weight:
+    type: "substrate weight"
+    unit: "kg"
+    alias: "LG Substrate weight"
+    source: "letsgrow"
+  lg_temp_outside:
+    type: "temperature"
+    unit: "°C"
+    alias: "LG Temp outside"
+    source: "letsgrow"
+  lg_rh_outside:
+    type: "humidity"
+    unit: "%RH"
+    alias: "LG RH outside"
+    source: "letsgrow"
+  lg_abs_hum_outside:
+    type: "absolute humidity"
+    unit: "g/m³"
+    alias: "LG Abs hum outside"
+    source: "letsgrow"
+  lg_hum_deficit_outside:
+    type: "humidity deficit"
+    unit: "g/m³"
+    alias: "LG Hum deficit outside"
+    source: "letsgrow"
+  lg_wind_speed:
+    type: "wind speed"
+    unit: "m/s"
+    alias: "LG Wind speed"
+    source: "letsgrow"
+  lg_wind_dir:
+    type: "wind direction"
+    unit: "°"
+    alias: "LG Wind direction"
+    source: "letsgrow"
+  lg_rain:
+    type: "rain status (1=rain, 0=dry)"
+    unit: ""
+    alias: "LG Rain"
+    source: "letsgrow"
+
 # Device descriptions say *where* the thing hangs, because that is what a
 # reading's meaning turns on and what a page can usefully caption. The location
 # letters are those of `static/red/sensor_locations.docx`, which the home page
@@ -461,3 +708,90 @@ devices:
     description: "Shivious cultivar at row 2012"
     position: "B"
     source: "sijia"
+
+  # ── LetsGrow modules (one device per LetsGrow screen) ──
+  # Each lists its own sensors: a module measures only its handful of the
+  # `letsgrow` tags, unlike a Sijia plant, which carries every Sijia tag.
+  "letsgrow-climate-b4":
+    description: "LetsGrow module 'Climate B4' — greenhouse climate, heating pipes, vents and screens of section B4"
+    position: "B"
+    type: "letsgrow"
+    source: "letsgrow"
+    sensors:
+      lg_temp_greenhouse: {}
+      lg_rh_greenhouse: {}
+      lg_abs_hum_greenhouse: {}
+      lg_hum_deficit_greenhouse: {}
+      lg_vpd: {}
+      lg_par: {}
+      lg_par_sum: {}
+      lg_co2: {}
+      lg_co2_kg: {}
+      lg_heating_setpoint: {}
+      lg_pipe_lower: {}
+      lg_pipe_lower_calc: {}
+      lg_pipe_growth: {}
+      lg_pipe_growth_calc: {}
+      lg_vent_lee: {}
+      lg_vent_lee_calc: {}
+      lg_vent_wind: {}
+      lg_vent_wind_calc: {}
+      lg_vent_setpoint: {}
+      lg_vent_temp_lee_calc: {}
+      lg_vent_temp_wind_calc: {}
+      lg_energy_curtain: {}
+      lg_blackout_curtain: {}
+      lg_fans: {}
+
+  "letsgrow-grow-light-b4":
+    description: "LetsGrow module 'Grow light B4' — assimilation and LED lighting of section B4"
+    position: "B"
+    type: "letsgrow"
+    source: "letsgrow"
+    sensors:
+      lg_assim_light_on: {}
+      lg_assim_light_pct: {}
+      lg_led1_on: {}
+
+  "letsgrow-plant-balance-b4":
+    description: "LetsGrow module 'Plant balance B4'"
+    position: "B"
+    type: "letsgrow"
+    source: "letsgrow"
+    sensors:
+      lg_temp_greenhouse: {}
+      lg_rad_sum: {}
+
+  "letsgrow-water-b4":
+    description: "LetsGrow module 'Water B4' — irrigation and drain of section B4"
+    position: "B"
+    type: "letsgrow"
+    source: "letsgrow"
+    sensors:
+      lg_water_uptake: {}
+      lg_irrigation: {}
+      lg_irrigation_ec: {}
+      lg_irrigation_ph: {}
+      lg_irrigation_starts: {}
+      lg_drain: {}
+      lg_drain_pct: {}
+      lg_drain_ec: {}
+      lg_drain_ph: {}
+      lg_substrate_weight: {}
+      lg_rad_sum: {}
+
+  "letsgrow-weather-station":
+    description: "LetsGrow module 'Weather station' — the greenhouse's own outdoor station"
+    position: "B"
+    type: "letsgrow"
+    source: "letsgrow"
+    sensors:
+      lg_temp_outside: {}
+      lg_rh_outside: {}
+      lg_abs_hum_outside: {}
+      lg_hum_deficit_outside: {}
+      lg_rad: {}
+      lg_rad_sum: {}
+      lg_wind_speed: {}
+      lg_wind_dir: {}
+      lg_rain: {}

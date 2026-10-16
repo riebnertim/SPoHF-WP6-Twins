@@ -11,8 +11,7 @@ import structlog
 from opentelemetry import trace
 from tenacity import RetryError
 
-from wp6_data.api import SensorReading, SpoHFClient
-from wp6_data.blue.tsdb import ensure_schema_blue
+from wp6_data.api import SpoHFClient
 from wp6_data.config import Settings
 from wp6_data.db import (
     close_pool,
@@ -22,6 +21,7 @@ from wp6_data.db import (
     refresh_sensor_summary_recent,
     upsert_readings,
 )
+from wp6_data.sync.feeds import feed_for
 from wp6_data.sync.state import SyncStateManager
 
 
@@ -99,7 +99,12 @@ def _generate_windows(
 
 
 class SyncOrchestrator:
-    """Orchestrate sensor data sync from SPoHF API to TimescaleDB."""
+    """Orchestrate sensor data sync from SPoHF API to each twin's TimescaleDB.
+
+    Endpoints are grouped by the twin their feed belongs to (see
+    `wp6_data.sync.feeds`); each group runs against its own database, one pool
+    at a time, because the pool is process-global.
+    """
 
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -108,7 +113,6 @@ class SyncOrchestrator:
             settings.api_token,
             settings.sync_page_size,
         )
-        self._dsn = settings.tsdb_url
 
     async def run(self) -> dict[str, Any]:
         """Execute full sync cycle.
@@ -130,46 +134,75 @@ class SyncOrchestrator:
             run_span.set_attribute("sync.mode", self.settings.sync_mode)
             run_span.set_attribute("sync.endpoint_count", len(self.settings.endpoint_list))
 
-            pool = await init_pool(self._dsn)
-            try:
-                await ensure_schema_blue(pool)
+            groups: dict[str, list[str]] = {}
+            for endpoint in self.settings.endpoint_list:
+                groups.setdefault(feed_for(endpoint).twin, []).append(endpoint)
 
-                # Sync each configured endpoint under its own child span, so the
-                # httpx (SPoHF API) and psycopg (TimescaleDB) spans it triggers
-                # nest beneath it automatically.
-                for endpoint in self.settings.endpoint_list:
-                    with tracer.start_as_current_span("sync.endpoint") as ep_span:
-                        ep_span.set_attribute("sync.endpoint", endpoint)
-                        try:
-                            count = await self._sync_endpoint(endpoint)
-                            ep_span.set_attribute("sync.records", count)
-                            stats["endpoints"][endpoint] = count
-                            stats["total_records"] += count
-                        except Exception as e:
-                            ep_span.record_exception(e)
-                            logger.exception("endpoint_sync_failed", endpoint=endpoint)
-                            stats["errors"].append(f"{endpoint}: {e}")
+            for endpoints in groups.values():
+                await self._sync_twin(endpoints, stats)
 
-                # Refresh the cagg so dashboards see freshly-written data
-                # immediately. The background policy runs on its own 15-min
-                # clock (not aligned with sync), so we can't rely on it for
-                # post-sync freshness. Incremental: scope to last 2 days
-                # (bounded, cheap). Full: whole-history refresh once.
-                if self.settings.sync_mode.lower() == "full":
-                    await refresh_sensor_summary(pool)
-                else:
-                    await refresh_sensor_summary_recent(pool)
-
-                stats["duration_seconds"] = (
-                    datetime.now(UTC) - start_time
-                ).total_seconds()
-                run_span.set_attribute("sync.total_records", stats["total_records"])
-                logger.info("sync_completed", **stats)
-
-            finally:
-                await close_pool()
+            stats["duration_seconds"] = (
+                datetime.now(UTC) - start_time
+            ).total_seconds()
+            run_span.set_attribute("sync.total_records", stats["total_records"])
+            logger.info("sync_completed", **stats)
 
         return stats
+
+    async def _sync_twin(self, endpoints: list[str], stats: dict[str, Any]) -> None:
+        """Sync one twin's endpoints against that twin's database.
+
+        A twin whose database cannot be reached fails its own endpoints only;
+        the other twin's still sync.
+        """
+        feed = feed_for(endpoints[0])
+        try:
+            dsn = feed.dsn(self.settings)
+            # The run-level `sync_job_starting` names WP6_TSDB_URL, which is
+            # blue's; this is the database these endpoints actually write to.
+            logger.info(
+                "twin_sync_starting",
+                twin=feed.twin,
+                tsdb_url=dsn.split("@")[-1],  # hide credentials
+                endpoints=endpoints,
+            )
+            pool = await init_pool(dsn)
+        except Exception as e:
+            logger.exception("twin_pool_failed", twin=feed.twin)
+            stats["errors"].extend(f"{endpoint}: {e}" for endpoint in endpoints)
+            return
+
+        try:
+            await feed.ensure_schema(pool)
+
+            # Sync each configured endpoint under its own child span, so the
+            # httpx (SPoHF API) and psycopg (TimescaleDB) spans it triggers
+            # nest beneath it automatically.
+            for endpoint in endpoints:
+                with tracer.start_as_current_span("sync.endpoint") as ep_span:
+                    ep_span.set_attribute("sync.endpoint", endpoint)
+                    ep_span.set_attribute("sync.twin", feed.twin)
+                    try:
+                        count = await self._sync_endpoint(endpoint)
+                        ep_span.set_attribute("sync.records", count)
+                        stats["endpoints"][endpoint] = count
+                        stats["total_records"] += count
+                    except Exception as e:
+                        ep_span.record_exception(e)
+                        logger.exception("endpoint_sync_failed", endpoint=endpoint)
+                        stats["errors"].append(f"{endpoint}: {e}")
+
+            # Refresh the cagg so dashboards see freshly-written data
+            # immediately. The background policy runs on its own 15-min
+            # clock (not aligned with sync), so we can't rely on it for
+            # post-sync freshness. Incremental: scope to last 2 days
+            # (bounded, cheap). Full: whole-history refresh once.
+            if self.settings.sync_mode.lower() == "full":
+                await refresh_sensor_summary(pool)
+            else:
+                await refresh_sensor_summary_recent(pool)
+        finally:
+            await close_pool()
 
     @staticmethod
     def _update_sensor_stats(
@@ -184,7 +217,7 @@ class SyncOrchestrator:
             s["max"] = dt_iso
 
     async def _flush_batch(
-        self, conn: Any, batch: list[dict[str, Any]]
+        self, conn: Any, batch: list[dict[str, Any]], source: str | None = None
     ) -> tuple[int, int]:
         """Flush a batch of readings to TimescaleDB.
 
@@ -193,7 +226,7 @@ class SyncOrchestrator:
         """
         if not batch:
             return 0, 0
-        upserted, created = await upsert_readings(conn, batch)
+        upserted, created = await upsert_readings(conn, batch, source=source)
         await conn.commit()
         logger.debug("batch_flushed", upserted=upserted, created=created)
         return upserted, created
@@ -209,6 +242,7 @@ class SyncOrchestrator:
         """
         start_time = datetime.now(UTC)
         mode = self.settings.sync_mode.lower()
+        feed = feed_for(endpoint)
 
         pool = get_pool()
 
@@ -252,25 +286,24 @@ class SyncOrchestrator:
                     window_upserted = 0
                     window_created = 0
 
-                    async for reading in self.client.fetch_window(
-                        endpoint, window_start, window_end
+                    async for params, reading_ts in feed.rows(
+                        self.client, endpoint, window_start, window_end
                     ):
-                        batch.append(self._reading_to_params(reading))
+                        batch.append(params)
                         self._update_sensor_stats(
                             sensor_stats,
-                            reading.sensor_tag,
-                            reading.datetime_measure.isoformat(),
+                            params["sensor_tag"],
+                            params["datetime_measure"],
                         )
 
                         # Watermark tracks how fresh our measurements are, so it keys on
-                        # datetime_measure (also what the API filters windows on) — not the
-                        # relay's ingestion time, which we ignore entirely.
-                        reading_ts = ensure_utc(reading.datetime_measure)
+                        # the measurement time (also what the API filters windows on) —
+                        # not the relay's ingestion time, which we ignore entirely.
                         if latest_timestamp is None or reading_ts > latest_timestamp:
                             latest_timestamp = reading_ts
 
                         if len(batch) >= BATCH_SIZE:
-                            upserted, created = await self._flush_batch(conn, batch)
+                            upserted, created = await self._flush_batch(conn, batch, feed.source)
                             total_count += upserted
                             total_created += created
                             window_upserted += upserted
@@ -278,7 +311,7 @@ class SyncOrchestrator:
                             batch = []
 
                     # Flush remaining batch for this window
-                    upserted, created = await self._flush_batch(conn, batch)
+                    upserted, created = await self._flush_batch(conn, batch, feed.source)
                     total_count += upserted
                     total_created += created
                     window_upserted += upserted
@@ -369,16 +402,3 @@ class SyncOrchestrator:
             return status, detail, msg
 
         return None, None, str(exc)[:200]
-
-    def _reading_to_params(self, reading: SensorReading) -> dict[str, Any]:
-        """Convert SensorReading to query parameters.
-
-        The relay's own `reading.project` is ignored — it arrives as 'unknown'
-        and the column no longer exists. Automated rows take `source`'s default.
-        """
-        return {
-            "device_name": reading.device_name,
-            "sensor_tag": reading.sensor_tag,
-            "value": reading.value,
-            "datetime_measure": reading.datetime_measure.isoformat(),
-        }

@@ -33,6 +33,24 @@ sync:
       cpu: 1
       memory: 1Gi
 
+# LetsGrow sync CronJob → red's database (wp6_red). LetsGrow is delivered once
+# a day (data up to local midnight, relayed the next morning), so hourly is
+# plenty. Incremental mode re-reads the last days each run; a historical
+# backfill is a one-off Job with mode "full" (and WP6_SYNC_START/END).
+letsgrowSync:
+  enabled: true
+  schedule: "40 * * * *"
+  pageSize: 1000
+  mode: "incremental"  # "full" or "incremental"
+  windowDays: 1
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 1
+      memory: 1Gi
+
 # SPoHF API
 api:
   baseUrl: "https://backoffice.spohf.com"
@@ -43,3 +61,6 @@ secrets:
   # Blue-twin-specific secret holding tsdb-url for the wp6_blue database.
   # Separate from the shared secret so red can have a symmetric red-secrets.
   blueSecret: ""  # Name of blue secret (default: wp6-data-blue-secrets)
+  # Red-twin secret holding tsdb-url for the wp6_red database (LetsGrow sync).
+  # The same secret the red dashboard reads.
+  redSecret: ""  # Name of red secret (default: wp6-data-red-secrets)

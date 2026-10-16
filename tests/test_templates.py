@@ -322,6 +322,23 @@ class TestBuildExploreTabs:
         assert "Chl" in tabs["manual"]
         assert "PAR" not in tabs["manual"]
 
+    def test_automated_source_is_shown_as_automated(self):
+        """A sync-ingested source (red's LetsGrow) routes by `source` but is not manual."""
+        registry = _registry(
+            sensor_defaults={
+                "lg_vpd": SensorMetadata(type="vpd", alias="LG VPD", source="letsgrow"),
+            },
+            devices={"letsgrow-climate-b4": DeviceMetadata(source="letsgrow")},
+        )
+        registry._meta.automated_sources = ["letsgrow"]
+        device_data = {"letsgrow-climate-b4": {"sensors": ["lg_vpd"], "readings": 7}}
+
+        tabs = build_explore_tabs(registry, device_data, {})
+
+        assert "LG VPD" in tabs["sensors"]
+        assert "LG VPD" not in tabs["manual"]
+        assert "letsgrow-climate-b4" in tabs["devices"]
+
     def test_devices_tab_excludes_manual_source_devices(self):
         registry = _registry(
             sensor_defaults={

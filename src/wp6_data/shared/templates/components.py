@@ -299,9 +299,10 @@ def build_explore_tabs(
     """Build the three explore tables (devices, sensors, manual measurements).
 
     Sensors are split by ``sensor_default(key).source``: empty source = auto-
-    logged, non-empty = manual upload. Devices are similarly filtered by
-    ``device(id).source`` so that manual-measurement plants do not appear in
-    the Devices tab.
+    logged, non-empty = manual upload unless the twin declares that source
+    automated (``MetadataRegistry.is_manual_source``). Devices are similarly
+    filtered by ``device(id).source`` so that manual-measurement plants do not
+    appear in the Devices tab.
 
     Args:
         metadata: The twin's metadata registry.
@@ -344,7 +345,7 @@ def build_explore_tabs(
             "Readings": f"{sensor_readings[key]:,}",
             "Source": sm.source,
         }
-        if sm.source:
+        if metadata.is_manual_source(sm.source):
             entry["Last upload"] = _format_timestamp_cell(
                 manual_uploads.get(sm.source),
             )
@@ -368,11 +369,11 @@ def build_explore_tabs(
             "<p>No manual measurements have been uploaded yet.</p>"
         )
 
-    # --- Devices tab: only auto-logged hardware (source == "") ---
+    # --- Devices tab: only auto-logged hardware ---
     auto_devices = {
         device_id: info
         for device_id, info in devices.items()
-        if not metadata.device(device_id).source
+        if not metadata.is_manual_source(metadata.device(device_id).source)
     }
 
     position_series: dict[str, list[str]] = {}
@@ -411,7 +412,7 @@ def build_explore_tabs(
         # tell measurement plants apart from sensor stations at a glance.
         source_badge = (
             f' <small><mark>manual: {dm.source}</mark></small>'
-            if dm.source else ""
+            if metadata.is_manual_source(dm.source) else ""
         )
         device_entries.append({
             "name": (

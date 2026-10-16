@@ -3,7 +3,7 @@
 Routes per-sensor based on the `source` field on `sensor_defaults` entries
 in the red MetadataRegistry. Sensors with no source go to MySQL (the
 legacy LoRaWAN tables); sensors with a source go to TimescaleDB (manual
-uploads + future letsgrow sync). The routing map is built once at init.
+uploads + the letsgrow sync). The routing map is built once at init.
 Federation is transparent — public protocol surface is unchanged.
 
 TSDB-side counts/last-seen come from the `sensors_daily_summary` continuous
@@ -305,7 +305,13 @@ class RedSensorProvider:
         return grouped
 
     def _enumerate_tsdb_sensors(self) -> list[tuple[str, str]]:
-        """List (device, sensor) pairs declared in metadata for TSDB sources."""
+        """List (device, sensor) pairs declared in metadata for TSDB sources.
+
+        A device that lists its own ``sensors`` carries exactly those (a
+        LetsGrow module measures its own handful of the source's tags); one
+        that lists none carries every tag of its source (each Sijia plant is
+        measured for every fruit-chemistry tag).
+        """
         sensors_by_source: dict[str, list[str]] = {}
         for tag, meta in self._metadata.sensor_defaults.items():
             if meta.source:
@@ -314,7 +320,8 @@ class RedSensorProvider:
         pairs: list[tuple[str, str]] = []
         for source, devices in self._tsdb_devices_by_source().items():
             for device in devices:
-                for sensor in sensors_by_source.get(source, []):
+                declared = self._metadata.devices[device].sensors
+                for sensor in declared or sensors_by_source.get(source, []):
                     pairs.append((device, sensor))
         return pairs
 

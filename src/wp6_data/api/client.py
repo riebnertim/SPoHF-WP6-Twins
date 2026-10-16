@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 
 import httpx
 import structlog
+from pydantic import BaseModel
 from tenacity import (
     retry,
     retry_if_exception_type,
@@ -12,7 +13,12 @@ from tenacity import (
     wait_exponential,
 )
 
-from wp6_data.api.models import ApiResponse, SensorReading
+from wp6_data.api.models import ApiResponse, Page, SensorReading
+
+# Each relay endpoint has its own row shape (yookr's device/tag rows vs
+# LetsGrow's module/column rows); the paging, retry and bisection below are
+# identical for all of them. `response_model` picks the shape, and its row type
+# is what the iterators yield.
 
 logger = structlog.get_logger()
 
@@ -49,14 +55,15 @@ class SpoHFClient:
         wait=wait_exponential(multiplier=1, min=2, max=10),
         retry=retry_if_exception_type((httpx.HTTPStatusError, httpx.TransportError)),
     )
-    async def _fetch_page(
+    async def _fetch_page[RowT: BaseModel](
         self,
         client: httpx.AsyncClient,
         endpoint: str,
         timestamp_from: datetime,
         timestamp_until: datetime,
         offset: int,
-    ) -> ApiResponse:
+        response_model: type[Page[RowT]],
+    ) -> Page[RowT]:
         """Fetch a single page with retry logic."""
         url = f"{self.base_url}/api/v1/data/{endpoint}"
         params = {
@@ -77,31 +84,36 @@ class SpoHFClient:
         response.raise_for_status()
 
         data = response.json()
-        return ApiResponse.model_validate(data)
+        return response_model.model_validate(data)
 
-    async def fetch_window(
+    async def fetch_window[RowT: BaseModel = SensorReading](
         self,
         endpoint: str,
         timestamp_from: datetime,
         timestamp_until: datetime,
-    ) -> AsyncIterator[SensorReading]:
+        *,
+        response_model: type[Page[RowT]] = ApiResponse,
+    ) -> AsyncIterator[RowT]:
         """Yield every record in one time window, bisecting past the result cap.
 
         Args:
             endpoint: API endpoint (e.g., "yookr-data")
             timestamp_from: Start of window (inclusive)
             timestamp_until: End of window (exclusive)
+            response_model: The endpoint's page shape (default: yookr's).
 
         Yields:
-            SensorReading objects. A window exceeding MAX_RESULT_WINDOW is split
-            in half and re-fetched, so records already yielded from the truncated
-            attempt are emitted again. Callers must be idempotent (``upsert_readings``
-            is) — duplicates are the price of never silently dropping the tail.
+            The page's rows: `SensorReading` by default, `LetsGrowReading` for
+            `LetsGrowResponse`. A window
+            exceeding MAX_RESULT_WINDOW is split in half and re-fetched, so
+            records already yielded from the truncated attempt are emitted
+            again. Callers must be idempotent (``upsert_readings`` is) —
+            duplicates are the price of never silently dropping the tail.
         """
         async with httpx.AsyncClient() as client:
             total = 0
             async for reading in self._fetch_range(
-                client, endpoint, timestamp_from, timestamp_until
+                client, endpoint, timestamp_from, timestamp_until, response_model
             ):
                 total += 1
                 yield reading
@@ -114,20 +126,22 @@ class SpoHFClient:
                 records=total,
             )
 
-    async def _fetch_range(
+    async def _fetch_range[RowT: BaseModel](
         self,
         client: httpx.AsyncClient,
         endpoint: str,
         timestamp_from: datetime,
         timestamp_until: datetime,
-    ) -> AsyncIterator[SensorReading]:
+        response_model: type[Page[RowT]],
+    ) -> AsyncIterator[RowT]:
         """Page one range; on hitting the result cap, bisect and recurse."""
         offset = 0
 
         while True:
             try:
                 response = await self._fetch_page(
-                    client, endpoint, timestamp_from, timestamp_until, offset
+                    client, endpoint, timestamp_from, timestamp_until, offset,
+                    response_model,
                 )
             except httpx.HTTPStatusError as e:
                 logger.error(
@@ -178,6 +192,8 @@ class SpoHFClient:
                     (timestamp_from, midpoint),
                     (midpoint, timestamp_until),
                 ):
-                    async for reading in self._fetch_range(client, endpoint, lo, hi):
+                    async for reading in self._fetch_range(
+                        client, endpoint, lo, hi, response_model
+                    ):
                         yield reading
                 return

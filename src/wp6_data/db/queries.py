@@ -15,6 +15,8 @@ logger = structlog.get_logger()
 async def upsert_readings(
     conn: AsyncConnection,
     readings: list[dict[str, Any]],
+    *,
+    source: str | None = None,
 ) -> tuple[int, int]:
     """Upsert a batch of readings into TimescaleDB.
 
@@ -22,6 +24,11 @@ async def upsert_readings(
         conn: psycopg async connection
         readings: List of dicts with keys:
             device_name, sensor_tag, value, datetime_measure
+        source: The `readings.source` to stamp. ``None`` (blue's datalake rows)
+            leaves the column at its default and dedups on blue's
+            ``(device_name, sensor_tag, time)``; a value dedups on red's
+            ``(source, device_name, sensor_tag, time)``, which is the only
+            unique index red's `readings` has.
 
     Returns:
         Tuple of (total upserted, newly created)
@@ -29,19 +36,30 @@ async def upsert_readings(
     if not readings:
         return 0, 0
 
+    if source is None:
+        columns = "time, device_name, sensor_tag, value, raw_value"
+        source_value = ""
+        # Matches blue's idx_readings_dedup_v3.
+        conflict = "device_name, sensor_tag, time"
+    else:
+        columns = "time, device_name, sensor_tag, value, raw_value, source"
+        source_value = ", %(source)s"
+        # Matches red's idx_readings_dedup.
+        conflict = "source, device_name, sensor_tag, time"
+
     query = (
-        "INSERT INTO readings (time, device_name, sensor_tag, value, raw_value)"
+        f"INSERT INTO readings ({columns})"
         " VALUES ("
         "  %(datetime_measure)s, %(device_name)s, %(sensor_tag)s,"
         r"  CASE WHEN %(value)s ~ '^-?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?$'"
         "       THEN %(value)s::double precision"
         "       ELSE NULL"
         "  END,"
-        "  %(value)s"
+        f"  %(value)s{source_value}"
         " )"
-        # Matches idx_readings_dedup_v3. Re-syncing a window (the client bisects
-        # and re-emits) must update in place, never duplicate.
-        " ON CONFLICT (device_name, sensor_tag, time)"
+        # Re-syncing a window (the client bisects and re-emits) must update in
+        # place, never duplicate.
+        f" ON CONFLICT ({conflict})"
         " DO UPDATE SET value = EXCLUDED.value,"
         "              raw_value = EXCLUDED.raw_value,"
         "              synced_at = NOW()"
@@ -55,7 +73,7 @@ async def upsert_readings(
     async with conn.cursor() as cur:
         created = 0
         for r in readings:
-            await cur.execute(query, r)
+            await cur.execute(query, r if source is None else {**r, "source": source})
             row = await cur.fetchone()
             if row and row[0]:
                 created += 1

@@ -1,0 +1,63 @@
+{{- if .Values.letsgrowSync.enabled }}
+# LetsGrow → red TimescaleDB. Same image and entrypoint as wp6-data-sync; only
+# the endpoint and the target database differ (the orchestrator routes
+# `letsgrow-data` to WP6_RED_TSDB_URL). A separate CronJob because LetsGrow is
+# delivered once a day: re-reading its last days every 15 minutes would cost
+# ~40k upserts per run for no new data.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: wp6-data-sync-letsgrow
+  labels:
+    app.kubernetes.io/name: wp6-data-sync-letsgrow
+spec:
+  schedule: {{ .Values.letsgrowSync.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 900
+      ttlSecondsAfterFinished: 3600
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: wp6-data-sync-letsgrow
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: sync
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              command: ["python", "-m", "wp6_data"]
+              env:
+                # SPoHF API
+                - name: WP6_API_BASE_URL
+                  value: {{ .Values.api.baseUrl | quote }}
+                - name: WP6_API_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.secrets.existingSecret | default "wp6-data-secrets" }}
+                      key: api-token
+                # Red TSDB connection (LetsGrow writes to wp6_red)
+                - name: WP6_RED_TSDB_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.secrets.redSecret | default "wp6-data-red-secrets" }}
+                      key: tsdb-url
+                - name: WP6_SYNC_PAGE_SIZE
+                  value: {{ .Values.letsgrowSync.pageSize | quote }}
+                - name: WP6_SYNC_WINDOW_DAYS
+                  value: {{ .Values.letsgrowSync.windowDays | quote }}
+                - name: WP6_ENDPOINTS
+                  value: "letsgrow-data"
+                - name: WP6_SYNC_MODE
+                  value: {{ .Values.letsgrowSync.mode | quote }}
+                - name: WP6_LOG_LEVEL
+                  value: "INFO"
+                - name: WP6_LOG_FORMAT
+                  value: "json"
+              resources:
+                {{- toYaml .Values.letsgrowSync.resources | nindent 16 }}
+{{- end }}

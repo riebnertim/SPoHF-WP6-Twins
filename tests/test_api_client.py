@@ -7,6 +7,7 @@ import httpx
 import pytest
 
 from wp6_data.api.client import MIN_WINDOW, SpoHFClient, parse_api_timestamp
+from wp6_data.api.models import ApiResponse
 
 from .conftest import make_api_response, make_reading
 
@@ -77,7 +78,7 @@ class TestFetchPage:
         ts_until = datetime(2024, 6, 2, tzinfo=UTC)
         # Bypass tenacity retry for unit test
         result = await client._fetch_page.__wrapped__(
-            client, mock_http, "yookr-data", ts_from, ts_until, 0
+            client, mock_http, "yookr-data", ts_from, ts_until, 0, ApiResponse
         )
         assert len(result.results) == 1
         assert result.count == 1
@@ -91,7 +92,7 @@ class TestFetchPage:
         ts_from = datetime(2024, 6, 1, tzinfo=UTC)
         ts_until = datetime(2024, 6, 2, tzinfo=UTC)
         await client._fetch_page.__wrapped__(
-            client, mock_http, "ep1", ts_from, ts_until, 100
+            client, mock_http, "ep1", ts_from, ts_until, 100, ApiResponse
         )
 
         call_kwargs = mock_http.get.call_args
@@ -205,7 +206,9 @@ def _capped_backend(readings, page_size, cap):
     in a single window is unreachable by offset alone.
     """
 
-    async def _fetch_page(_self, client, endpoint, ts_from, ts_until, offset):
+    async def _fetch_page(
+        _self, client, endpoint, ts_from, ts_until, offset, response_model=None
+    ):
         assert offset + page_size <= cap, "client must never request past the cap"
         rows = sorted(
             (r for r in readings if ts_from <= r.datetime_measure < ts_until),

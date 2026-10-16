@@ -52,6 +52,8 @@ class SensorMetadata(BaseModel):
     alias: str = ""
     intention: str = ""
     source: str = ""  # routing key; "" = MySQL default for red, datalake for blue
+    # A non-empty source is a manual upload unless the twin lists it under
+    # `automated_sources` (see `MetadataRegistry.is_manual_source`).
     # How several readings of this measure combine into one figure for a period.
     # "avg" is right for anything measured *per item* — a concentration, a
     # per-berry weight, a score — which is every measure either twin takes
@@ -87,6 +89,9 @@ class TwinMetadata(BaseModel):
 
     sensor_defaults: dict[str, SensorMetadata] = {}
     devices: dict[str, DeviceMetadata] = {}
+    # Sources whose readings a sync job ingests rather than a person uploads.
+    # They route like any sourced sensor but are shown as automated.
+    automated_sources: list[str] = []
 
 
 class MetadataRegistry:
@@ -136,6 +141,14 @@ class MetadataRegistry:
     def devices(self) -> dict[str, DeviceMetadata]:
         """Read-only view of all device entries."""
         return self._meta.devices
+
+    def is_manual_source(self, source: str) -> bool:
+        """True if readings tagged ``source`` come from a manual upload.
+
+        ``""`` is the twin's default automated feed; any other source is manual
+        unless declared under ``automated_sources``.
+        """
+        return bool(source) and source not in self._meta.automated_sources
 
     def sensor(
         self, sensor_key: str, device_key: str | None = None,
